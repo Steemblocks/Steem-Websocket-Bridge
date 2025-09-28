@@ -15,6 +15,13 @@ class ProductionSteemBridge {
         this.domain = process.env.DOMAIN || 'dhakawitness.com';
         this.apiEndpoint = process.env.STEEM_API_ENDPOINT || 'api.steemit.com';
         
+        // Reliable Steem nodes as fallback options
+        this.steemNodes = [
+            'api.steemit.com',
+            'steemd.steemworld.org', 
+            'api.moecki.online'
+        ];
+        
         // State management
         this.clients = new Set();
         this.currentBlock = 0;
@@ -65,6 +72,65 @@ class ProductionSteemBridge {
         
         this.setupServer();
         this.setupRequestManagement();
+        this.initializeConnection();
+    }
+    
+    // Initialize and test Steem API connection
+    async initializeConnection() {
+        console.log('🔍 Initializing Steem API connection...');
+        console.log(`🌐 Available nodes: ${this.steemNodes.join(', ')}`);
+        console.log(`🎯 Primary endpoint: ${this.apiEndpoint}`);
+        
+        // Test connection after a short delay
+        setTimeout(async () => {
+            await this.testSteemConnection();
+        }, 3000);
+    }
+    
+    async testSteemConnection() {
+        console.log('🧪 Testing Steem API connection...');
+        
+        try {
+            // Test with a simple API call
+            const testCall = await this.queueAPICall('condenser_api.get_dynamic_global_properties', []);
+            
+            if (testCall && testCall.result && testCall.result.head_block_number) {
+                this.currentBlock = testCall.result.head_block_number;
+                console.log(`✅ Steem API connected successfully!`);
+                console.log(`📊 Current Steem block: ${this.currentBlock}`);
+                console.log(`🏷️  Chain ID: ${testCall.result.chain_id || 'N/A'}`);
+                
+                // Start automatic data fetching
+                this.startAutomaticDataFetch();
+            } else {
+                console.error('❌ API call succeeded but returned unexpected data:', testCall);
+            }
+        } catch (error) {
+            console.error('❌ Failed to connect to Steem API:', error.message);
+            console.log('🔄 Will retry connection in 30 seconds...');
+            
+            // Retry after 30 seconds
+            setTimeout(() => {
+                this.testSteemConnection();
+            }, 30000);
+        }
+    }
+    
+    startAutomaticDataFetch() {
+        console.log('🚀 Starting automatic Steem data fetching...');
+        
+        // Fetch dynamic global properties every 10 seconds
+        setInterval(async () => {
+            try {
+                const response = await this.queueAPICall('condenser_api.get_dynamic_global_properties', []);
+                if (response && response.result) {
+                    this.currentBlock = response.result.head_block_number;
+                    console.log(`📊 Updated: Block ${this.currentBlock}`);
+                }
+            } catch (error) {
+                console.error('🔄 Auto-fetch error:', error.message);
+            }
+        }, 10000);
     }
     
     setupServer() {
@@ -448,6 +514,8 @@ class ProductionSteemBridge {
                 id: Date.now()
             });
 
+            console.log(`🌐 API Call: ${method} to ${this.apiEndpoint}`);
+
             const options = {
                 hostname: this.apiEndpoint,
                 port: 443,
@@ -457,22 +525,47 @@ class ProductionSteemBridge {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(postData),
                     'User-Agent': `SteemBridge-${this.domain}/1.0`
-                }
+                },
+                timeout: 15000 // 15 second timeout
             };
 
             const req = https.request(options, (res) => {
+                console.log(`📡 Response: ${res.statusCode} from ${this.apiEndpoint}`);
+                
                 let data = '';
                 res.on('data', (chunk) => data += chunk);
                 res.on('end', () => {
                     try {
-                        resolve(JSON.parse(data));
+                        const result = JSON.parse(data);
+                        if (result.error) {
+                            console.error(`❌ API Error:`, result.error);
+                            reject(new Error(`API Error: ${result.error.message || result.error}`));
+                        } else if (result.result) {
+                            console.log(`✅ API Success: ${method}`);
+                            resolve(result);
+                        } else {
+                            console.log(`⚠️  Unexpected response format:`, result);
+                            resolve(result);
+                        }
                     } catch (error) {
+                        console.error(`❌ JSON Parse Error:`, error.message);
+                        console.log(`Raw response: ${data.substring(0, 200)}...`);
                         reject(error);
                     }
                 });
             });
 
-            req.on('error', reject);
+            req.on('error', (error) => {
+                console.error(`❌ Connection Error to ${this.apiEndpoint}:`, error.message);
+                reject(error);
+            });
+
+            req.on('timeout', () => {
+                console.error(`❌ Timeout connecting to ${this.apiEndpoint}`);
+                req.destroy();
+                reject(new Error(`Timeout connecting to ${this.apiEndpoint}`));
+            });
+
             req.write(postData);
             req.end();
         });
