@@ -9,8 +9,7 @@
     "dev": "node steem-bridge.js",
     "test": "node steem-client.js",
     "docker:build": "docker build -t steem-bridge .",
-    "docker:run": "docker-compose up -d",
-    "docker:prod": "docker-compose -f docker-compose.production.yml up -d"
+    "docker:run": "docker run -d -p 8080:8080 --name steem-bridge steem-bridge"
   },
   "repository": {
     "type": "git",
@@ -26,7 +25,7 @@
     "decentralized",
     "dpos"
   ],
-  "author": "Your Name",
+  "author": "dhaka.witness",
   "license": "MIT",
   "dependencies": {
     "ws": "^8.18.3"
@@ -34,8 +33,8 @@
   "engines": {
     "node": ">=16.0.0"
   },
-  "homepage": "https://github.com/yourusername/steem-websocket-bridge",
+  "homepage": "https://github.com/steemblocks/steem-websocket-bridge",
   "bugs": {
-    "url": "https://github.com/yourusername/steem-websocket-bridge/issues"
+    "url": "https://github.com/steemblocks/steem-websocket-bridge/issues"
   }
 }
