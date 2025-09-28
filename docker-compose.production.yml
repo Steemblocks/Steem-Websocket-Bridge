@@ -1,0 +1,63 @@
+# Production Docker Compose for dhakawitness.com
+version: '3.8'
+
+services:
+  steem-bridge:
+    build: .
+    container_name: dhakawitness-bridge
+    environment:
+      - NODE_ENV=production
+      - DOMAIN=dhakawitness.com
+      - PORT=8080
+      - HOST=0.0.0.0
+      - STEEM_API_ENDPOINT=api.steemit.com
+    ports:
+      - "8080:8080"
+    networks:
+      - steem-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    volumes:
+      - ./logs:/app/logs:rw
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    container_name: dhakawitness-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - steem-bridge
+    networks:
+      - steem-network
+    restart: unless-stopped
+
+networks:
+  steem-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  nginx_logs:
+  app_logs:
